@@ -1,0 +1,424 @@
+---
+title: "project"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: "2023-06-11"
+---
+
+```{r load-packages, message = FALSE,echo=FALSE}
+library(knitr)
+library(tidyverse)
+library(broom)
+library(htmltools)
+library(cowplot)
+library(dplyr)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+opts_chunk$set(echo=FALSE) # hide source code in the document
+```
+
+# 1. Introduction
+
+## research question: Is there variation in the result number for scientific terms on Google across countries over time?
+
+Specifically, the research seeks to address the following sub-questions:
+
+1.  is there any overlap between result searches in similar languages for scientific terms on Google without taking into account the result number.
+2.  if there were an overlap, is there an overlap between the specific result number? if not, what is the variation?
+
+this research is important as it sheds light on the consistency and accessibility of search results for scientific terms across different countries over time. Understanding the variations in result numbers can provide insights into the factors influencing search rankings
+
+In general, ensuring consistent quality and accessibility of search results for scientific terms over time is of paramount importance. The expectation is that users conducting searches on Google for scientific topics should receive reliable and relevant information consistently, regardless of the geographical location or the specific time of the search.
+
+# 2. ffff
+
+```{r, results='hide',include=FALSE}
+matching_links = read_csv("matching_links.csv")
+data = read_csv("relevent_data.csv")
+data$feature2 <- sub(".+,(\\s*)([^,]+)$", "\\2", data$feature2)
+```
+
+```{r,include=FALSE,results='hide'}
+joined_data = left_join(data,matching_links, by = "feature10")
+df <- joined_data[complete.cases(joined_data$Countries), ]
+df <- df %>% mutate(feature8 = as.Date(feature8, format = "%d.%m.%Y"))
+df_list <- split(df, df$feature2)
+```
+
+```{r}
+getFeature9Values <- function(x) {
+  best <- lapply(x, function(df) df$feature9)
+  return(best)
+}
+```
+
+```{r, results='hide'}
+result_list <- list()
+max_difference <- -Inf
+min_difference <- Inf
+
+# Calculate average differences for each country
+for (country_name in names(df_list)) {
+  country_data <- df_list[[country_name]]
+  country_data <- country_data[order(country_data$feature8), ]  # Sort by date
+  country_split <- split(country_data, country_data$feature10)
+  country_filtered <- Filter(function(x) nrow(x) >= 2, country_split)
+  
+  best <- getFeature9Values(country_filtered)
+  differences <- numeric()
+  
+  for (j in seq_along(best)) {
+    for (i in seq_len(length(best[[j]]) - 1)) {
+      difference <- abs(as.numeric(best[[j]][i+1]) - as.numeric(best[[j]][i]))  # Absolute difference
+      differences <- append(differences, difference)
+    }
+  }
+  
+  if (length(differences) > 0) {
+    average_difference <- sum(differences) / length(differences)
+  
+    # Update maximum and minimum differences
+    max_difference <- max(max_difference, average_difference)
+    min_difference <- min(min_difference, average_difference)
+    result_list[[country_name]] <- average_difference
+  }
+}
+
+# Normalize the results between 0 and 1
+if (max_difference != min_difference) {
+  for (country_name in names(result_list)) {
+    average_difference <- result_list[[country_name]]
+    cat("Country:", country_name,"average_difference:",average_difference, "\n")
+  }
+} 
+
+
+
+```
+
+
+```{r}
+# create a data frame from the data above
+average_difference_df <- data.frame(
+  Country = names(result_list),
+  average_difference = unlist(result_list)
+)
+
+# sort the data frame by average_difference in descending order
+average_difference_df <- average_difference_df[order(-average_difference_df$average_difference),]
+
+# sreate a grouped bar plot with sorted data
+plot1 <- ggplot(average_difference_df, aes(x = reorder(Country, -average_difference), y = average_difference, fill = Country)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
+  labs(y = "average difference") +
+  ggtitle("average_difference by Country") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot1)
+
+
+```
+
+
+```{r}
+model <- lm(average_difference ~ Country, data = result_df1)
+coefficient <- coef(summary(model))[2, "Estimate"]
+standard_error <- coef(summary(model))[2, "Std. Error"]
+var(result_df1$average_difference)
+coefficient
+standard_error
+```
+
+
+
+
+```{r}
+library(ggplot2)
+
+# Create a data frame from the result list
+result_df <- data.frame(
+  Country = names(result_list),
+  NormalizedDifference = unlist(result_list)
+)
+
+# Normalize the differences between 0 and 1
+result_df$NormalizedDifference <- (result_df$NormalizedDifference - min(result_df$NormalizedDifference)) /
+                                   (max(result_df$NormalizedDifference) - min(result_df$NormalizedDifference))
+
+# Reorder the levels of the Country variable based on NormalizedDifference
+result_df$Country <- factor(result_df$Country, levels = result_df$Country[order(result_df$NormalizedDifference)])
+
+# Create a grouped bar plot
+plot <- ggplot(result_df, aes(x = Country, y = NormalizedDifference, fill = Country)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
+  labs(y = "Normalized Difference") +
+  ggtitle("Normalized Difference by Country") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(plot)
+
+```
+
+# 3. Methods and Results
+
+## STEP 1: Data Preprocessing:
+
+first, we expanded the dataset by incorporating data extracted from HTML using a Python code. This allowed us to gather more comprehensive information for our analysis.thats beacuse we found that the given dataset was insufficient to provide a comprehensive analysis of the variations.
+Additionally, To enhance dataset readability and understandably, we opted to replace complex variable names with more generic terms, improving data interpretation and analysis.
+
+## STEP 2: Overlap Analysis:
+
+To enhance the dataset and focus on relevant information, we employed a Python script to create the "matching links" table. This table was generated by including only those links that demonstrated an overlap in search results over time. By filtering out irrelevant links, we aimed to ensure that our analysis focused on the most pertinent data points for investigating the variations in search results for scientific terms across countries.(answer sub 1)
+
+## STEP 3: Variation Analysis:
+
+We focused on the result number feature (feature9) and their variations. We calculated the average difference between consecutive result numbers for each country. This involved sorting the data by date, splitting it based on unique search queries.
+
+
+```{r,results='hide'}
+Israel <- df_list[[10]]
+Israel_relevent <- Israel[c("feature0", "feature1", "feature4","feature8","feature9","feature10")]
+write.csv(Israel_relevent, "output.csv", row.names = FALSE)
+```
+
+```{r,results='hide',warning=FALSE,include=FALSE}
+library(ggplot2)
+library(scales)
+
+# Subset the relevant lines from the DataFrame
+subset_df <- Israel_relevent[Israel_relevent$feature10 == "http://greenrg.org.il/", ]
+
+# Sort the data by "feature8"
+subset_df <- subset_df[order(subset_df$feature8), ]
+
+subset_df2 <- Israel_relevent[Israel_relevent$feature10 == "http://infospot.co.il/scp/%D7%96%D7%99%D7%94%D7%95%D7%9D_%D7%A7%D7%A8%D7%A7%D7%A2", ]
+subset_df2 <- subset_df2[order(subset_df2$feature8), ]
+
+subset_df3 <- Israel_relevent[Israel_relevent$feature10 == "https://fs.knesset.gov.il/globaldocs/MMM/1ebb8d55-f7f7-e411-80c8-00155d010977/2_1ebb8d55-f7f7-e411-80c8-00155d010977_11_7091.pdf", ]
+subset_df3 <- subset_df3[order(subset_df3$feature8), ]
+
+subset_df4 <- Israel_relevent[Israel_relevent$feature10 == "https://www.gov.il/he/departments/guides/what_is_contaminated_soil", ]
+subset_df4 <- subset_df4[order(subset_df4$feature8), ]
+
+subset_df5 <- Israel_relevent[Israel_relevent$feature10 == "https://www.globes.co.il/news/%D7%90%D7%A0%D7%A8%D7%92%D7%99%D7%94_%D7%9E%D7%AA%D7%97%D7%93%D7%A9%D7%AA.tag", ]
+subset_df5 <- subset_df5[order(subset_df5$feature8), ]
+
+subset_df6 <- Israel_relevent[Israel_relevent$feature10 == "https://www.gov.il/he/departments/topics/renewable-energy/govil-landing-page", ]
+subset_df6 <- subset_df6[order(subset_df6$feature8), ]
+
+subset_df7 <- Israel_relevent[Israel_relevent$feature10 == "https://www.solari.co.il/%D7%9E%D7%94%D7%99-%D7%90%D7%A0%D7%A8%D7%92%D7%99%D7%94-%D7%9E%D7%AA%D7%97%D7%93%D7%A9%D7%AA/", ]
+subset_df7 <- subset_df7[order(subset_df7$feature8), ]
+
+subset_df8 <- Israel_relevent[Israel_relevent$feature10 == "https://davidson.weizmann.ac.il/online/askexpert/general_know/%D7%94%D7%90%D7%9D-%D7%94%D7%A0%D7%97%D7%99%D7%AA%D7%94-%D7%A2%D7%9C-%D7%94%D7%99%D7%A8%D7%97-%D7%94%D7%AA%D7%A8%D7%97%D7%A9%D7%94-%D7%91%D7%90%D7%9E%D7%AA-%D7%99%D7%A7%D7%99%D7%A8", ]
+subset_df8 <- subset_df8[order(subset_df8$feature8), ]
+
+subset_df9 <- Israel_relevent[Israel_relevent$feature10 == "https://he.wikipedia.org/wiki/%D7%AA%D7%90%D7%95%D7%A8%D7%99%D7%99%D7%AA_%D7%94%D7%A7%D7%A9%D7%A8_%D7%A2%D7%9C_%D7%96%D7%99%D7%95%D7%A3_%D7%94%D7%A0%D7%97%D7%99%D7%AA%D7%94_%D7%A2%D7%9C_%D7%94%D7%99%D7%A8%D7%97" & Israel_relevent$feature0 == "80-B", ]
+subset_df9 <- subset_df9[order(subset_df9$feature8), ]
+
+
+subset_df10 <- Israel_relevent[Israel_relevent$feature10 == "https://www.ynet.co.il/entertainment/article/syitirpht" & Israel_relevent$feature0 == "80-B", ]
+subset_df10 <- subset_df10[order(subset_df10$feature8), ]
+
+
+subset_df11 <- Israel_relevent[Israel_relevent$feature10 == "https://www.mako.co.il/hix-history/conspiracy-theories/Article-dd30a8e07b00961006.htm" & Israel_relevent$feature0 == "80-B", ]
+subset_df11 <- subset_df11[order(subset_df11$feature8), ]
+
+
+subset_df12 <- Israel_relevent[Israel_relevent$feature10 == "https://news.walla.co.il/item/3247590" & Israel_relevent$feature0 == "80-B" ,]
+subset_df12 <- subset_df12[order(subset_df12$feature8), ]
+
+
+
+
+
+```
+
+```{r,results='hide',warning=FALSE,plot_lines65 }
+
+library(ggplot2)
+library(scales)
+
+# Define custom color palettes for each plot
+colors65 <- c("#1B4F72", "#186A3B", "#7B241C")
+colors58 <- c("#1B4F72", "#186A3B", "#7B241C")
+colors80 <- c("#1B4F72", "#186A3B", "#7B241C","#F1C40F","#884EA0")
+
+legend_labels65 <- c("infospot.co.il", "fs.knesset.gov.il", "gov.il")
+legend_labels58 <- c("globes.co.il", "gov.il", "greenrg.org.il")
+legend_labels80 <- c("davidson.weizmann.ac.il", "he.wikipedia.org","ynet.co.il", "mako.co.il", "news.walla.co.il")
+
+
+# Create a line plot for subset_df2, subset_df3, and subset_df4 with custom colors
+plot_lines65 <- ggplot() +
+  geom_line(data = subset_df2, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df2, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+  geom_line(data = subset_df3, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df3, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+  geom_line(data = subset_df4, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df4, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink", title = "termID:65-Soil contamination ,type:Socio-Scientific Isuues") +
+  scale_color_manual(values = colors65, labels = legend_labels65) +  # Assign custom colors
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(plot_lines65)
+
+# Create a line plot for subset_df5, subset_df6, and subset_df with custom colors and legend
+plot_lines58 <- ggplot() +
+  geom_line(data = subset_df5, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df5, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df6, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df6, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink",title ="termID:58-Renewable energy ,type:Socio-Scientific Isuues") +
+  scale_color_manual(values = colors58, labels = legend_labels58) +  # Assign custom colors
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(plot_lines58)
+
+# Create a line plot for subset_df8, subset_df9, subset_df10, subset_df11, and subset_df12 with custom colors
+plot_lines80 <- ggplot() +
+  geom_line(data = subset_df8, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df8, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df9, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df9, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df10, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df10, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df11, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df11, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df12, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df12, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink",title = "termID:80-B-Moon landing fake, type:Conspiracy Theories") +
+  scale_color_manual(values = colors80,labels = legend_labels80) +  # Assign custom colors
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(plot_lines80)
+
+
+
+```
+```{r}
+Spain <- df_list[[25]]
+Spain_relevent <- Spain[c("feature0", "feature1", "feature4","feature8","feature9","feature10")]
+write.csv(Spain_relevent, "output1.csv", row.names = FALSE)
+```
+
+```{r}
+
+subset_df41 <- Spain_relevent[Spain_relevent$feature10 == "http://www.ideam.gov.co/documents/21021/21138/Gases+de+Efecto+Invernadero+y+el+Cambio+Climatico.pdf", ]
+subset_df41 <- subset_df41[order(subset_df41$feature8), ]
+
+subset_df42 <- Spain_relevent[Spain_relevent$feature10 == "https://www.miteco.gob.es/es/calidad-y-evaluacion-ambiental/temas/sistema-espanol-de-inventario-sei-/Inventario-GEI.aspx", ]
+subset_df42 <- subset_df42[order(subset_df42$feature8), ]
+
+subset_df43 <- Spain_relevent[Spain_relevent$feature10 == "https://espanol.epa.gov/la-energia-y-el-medioambiente/descripcion-general-de-los-gases-de-efecto-invernadero", ]
+subset_df43 <- subset_df43[order(subset_df43$feature8), ]
+
+subset_df44 <- Spain_relevent[Spain_relevent$feature10 == "https://es.wikipedia.org/wiki/Gas_de_efecto_invernadero", ]
+subset_df44 <- subset_df44[order(subset_df44$feature8), ]
+
+subset_df45 <- Spain_relevent[Spain_relevent$feature10 == "https://icaen.gencat.cat/es/energia/que_es/", ]
+subset_df45 <- subset_df45[order(subset_df45$feature8), ]
+
+subset_df46 <- Spain_relevent[Spain_relevent$feature10 == "https://fundacionendesa.org/es/educacion/endesa-educa/recursos/que-es-la-energia", ]
+subset_df46 <- subset_df46[order(subset_df46$feature8), ]
+
+subset_df47 <- Spain_relevent[Spain_relevent$feature10 == "https://es.wikipedia.org/wiki/Energ%C3%ADa", ]
+subset_df47 <- subset_df47[order(subset_df47$feature8), ]
+
+
+subset_df48 <- Spain_relevent[Spain_relevent$feature10 == "https://blog.reparacion-vehiculos.es/coches-autonomos-beneficios", ]
+subset_df48 <- subset_df48[order(subset_df48$feature8), ]
+
+subset_df49 <- Spain_relevent[Spain_relevent$feature10 == "https://es.wikipedia.org/wiki/Veh%C3%ADculo_aut%C3%B3nomo", ]
+subset_df49 <- subset_df49[order(subset_df49$feature8), ]
+
+subset_df50 <- Spain_relevent[Spain_relevent$feature10 == "https://www.xataka.com/vehiculos/quien-quien-vehiculo-autonomo-estas-companias-que-quieren-hacerse-sector", ]
+subset_df50 <- subset_df50[order(subset_df50$feature8), ]
+
+
+```
+
+```{r,results='hide',warning=FALSE,plot_lines65 }
+
+library(ggplot2)
+library(scales)
+
+# Define custom color palettes for each plot
+colors66 <- c("#1B4F72", "#186A3B", "#7B241C","#F1C40F")
+colors28 <- c("#1B4F72", "#186A3B", "#7B241C")
+colors87 <- c("#1B4F72", "#186A3B", "#7B241C")
+
+legend_labels66 <- c("ideam.gov", "miteco.gob", "espanol.epa.gov","wikipedia")
+legend_labels28 <- c("gencat.cat", "fundacionendesa", "wikipedia")
+legend_labels87 <- c("blog.reparacion", "wikipedia","xataka")
+
+
+# Create a line plot for subset_df2, subset_df3, and subset_df4 with custom colors
+plot_lines66 <- ggplot() +
+  geom_line(data = subset_df41, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df41, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+    geom_line(data = subset_df42, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df42, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+    geom_line(data = subset_df43, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df43, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+    geom_line(data = subset_df44, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 1) +
+  geom_point(data = subset_df44, aes(x = feature8, y = feature9, color = as.factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink", title ="termID:66-Greenhouse gas ,type:Socio-Scientific Isuues") +
+  scale_color_manual(values = colors66, labels = legend_labels66) + 
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(plot_lines66)
+
+# Create a line plot for subset_df5, subset_df6, and subset_df with custom colors and legend
+plot_lines28 <- ggplot() +
+  geom_line(data = subset_df45, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df45, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df46, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df46, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df47, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df47, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink",title ="termID:28-Energy, type:Canonical Scientific Issues") +
+  scale_color_manual(values = colors28, labels = legend_labels28) +  # Assign custom colors
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot_lines28)
+
+# Create a line plot for subset_df8, subset_df9, subset_df10, subset_df11, and subset_df12 with custom colors
+plot_lines87 <- ggplot() +
+  geom_line(data = subset_df48, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df48, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df49, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df49, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  geom_line(data = subset_df50, aes(x = feature8, y = feature9, color = factor(feature10)), size = 1) +
+  geom_point(data = subset_df50, aes(x = feature8, y = feature9, color = factor(feature10)), size = 3) +
+  labs(x = "Date", y = "result number", color = "termLink",title = "termID:87 - Self-driving car, type:Novel Science and Technology Issues") +
+  scale_color_manual(values = colors87,labels = legend_labels87) +  # Assign custom colors
+  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+print(plot_lines87)
+
+```
+# 4.Limitations and Future Work
+
+In our approach, we aimed to investigate the consistency of search results quality and accessibility for scientific terms across different countries over time. Based on the available time and data, we concluded that by examining the variation in the number of search results from different websites over time and across countries, we could gain insights into the consistency of information.
+
+However, there are limitations to our approach. For one, it is important to note that if a high-quality and accessible website moves down in the search results, it does not necessarily indicate a failure in providing reliable information. This is because a new site appearing in that search result position could also be a reputable source of information.
+
+Given additional time for our project, we would address the aforementioned limitations. In addition we could involve scraping internet pages and developing models to predict the quality and accessibility of a given site. By employing these models, we could gather a more extensive dataset, enabling us to perform a more precise statistical analysis.
+
+examining the variation in search results for scientific terms across different countries and over time can provide insights into how the Google algorithm works. It can shed light on the factors that influence the ranking and presentation of search results, such as language preferences, location-based relevance, user behavior, and temporal dynamics of information indexing. By studying these variations, researchers can gain a better understanding of how Google's algorithm processes and delivers search results
